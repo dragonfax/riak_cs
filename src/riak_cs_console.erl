@@ -131,15 +131,29 @@ resolve_siblings(Pid, RawBucket, RawKey) ->
 
 -spec resolve_ro_siblings(riakc_obj:riakc_obj(), binary(), binary()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
-resolve_ro_siblings(_, ?USER_BUCKET, _) ->   {error, {not_supported, ?USER_BUCKET}};
-resolve_ro_siblings(_, ?ACCESS_BUCKET, _) ->  {error, {not_supported, ?ACCESS_BUCKET}};
-resolve_ro_siblings(_, ?STORAGE_BUCKET, _) ->  {error, {not_supported, ?STORAGE_BUCKET}};
+resolve_ro_siblings(_, ?USER_BUCKET, _) ->
+    %% This is not supposed to happen unless something is messed up
+    %% with Stanchion. Resolve logic is not obvious and needs operator decision.
+    {error, {not_supported, ?USER_BUCKET}};
+resolve_ro_siblings(_, ?ACCESS_BUCKET, _) ->
+    %% To support access bucket, JSON'ized data should change its data
+    %% structure to G-set, or map(register -> P-counter)
+    {error, {not_supported, ?ACCESS_BUCKET}};
+resolve_ro_siblings(_, ?STORAGE_BUCKET, _) ->
+    %% Storage bucket access conflict resolution is not obvious; maybe
+    %% adopt max usage on each buckets.
+    {error, {not_supported, ?STORAGE_BUCKET}};
+resolve_ro_siblings(_, ?BUCKETS_BUCKET, _) ->
+    %% Bucket conflict resolution obvious, referring to all users
+    %% described in value and find out who's true user. If multiple
+    %% users are owner (that cannot happen unless Stanchion is messed
+    %% up), operator must choose who is true owner.
+    {error, {not_supported, ?BUCKETS_BUCKET}};
 resolve_ro_siblings(RO, ?GC_BUCKET, _) ->
     Resolved = riak_cs_gc:decode_and_merge_siblings(RO, twop_set:new()),
     Obj = riak_cs_utils:update_obj_value(RO,
                                          riak_cs_utils:encode_term(Resolved)),
     {ok, Obj};
-
 resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
     case riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RO)) of
         {{MD, Value}, true} when is_binary(Value) ->
