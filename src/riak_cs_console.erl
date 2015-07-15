@@ -129,6 +129,10 @@ resolve_siblings(Pid, RawBucket, RawKey) ->
             E
     end.
 
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
 -spec resolve_ro_siblings(riakc_obj:riakc_obj(), binary(), binary()) ->
                                  {ok, riakc_obj:riakc_obj()} | {error, term()}.
 resolve_ro_siblings(_, ?USER_BUCKET, _) ->
@@ -176,11 +180,6 @@ resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
     {B, K} = Manifest?MANIFEST.bkey,
     RO = riak_cs_manifest_fsm:update_md_with_multipart_2i(ObjectToWrite0, Manifests, B, K),
     {ok, RO}.
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
-
 
 -spec maybe_cleanup_csbucket(riak_client(),
                              binary(),
