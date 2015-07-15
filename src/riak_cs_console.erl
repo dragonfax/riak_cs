@@ -27,6 +27,8 @@
          cleanup_orphan_multipart/1
         ]).
 
+-export([resolve_siblings/3]).
+
 -include("riak_cs.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
@@ -99,6 +101,67 @@ cleanup_orphan_multipart(Timestamp) when is_binary(Timestamp) ->
     _ = lager:info("All old unaborted orphan multipart uploads have been deleted.", []),
     _ = io:format("~nAll old unaborted orphan multipart uploads have been deleted.~n", []).
 
+
+%% @doc Resolve siblings as quick operation. Assuming login via
+%% `riak-cs attach` RawKey and RawBucket should be provided via Riak
+%% log. Example usage is:
+%%
+%% > {ok, Pid} = riakc_pb_socket:start_link(Host, Port).
+%% > riak_cs_console:resolve_siblings(Pid, <<...>>, <<...>>).
+%% > riakc_pb_socket:stop(Pid).
+%%
+%% Note: this does not support multibag itself
+-spec resolve_siblings(pid(), RawBucket::binary(), RawKey::binary()) -> ok | {error, term()}.
+resolve_siblings(Pid, RawBucket, RawKey) ->
+    GetOptions = [{r, all}],
+    _ = lager:info("Trying to resolve siblings of ~p:~p", [RawBucket, RawKey]),
+    case riakc_pb_socket:get(Pid, RawBucket, RawKey, GetOptions, ?DEFAULT_RIAK_TIMEOUT) of
+        {ok, RiakObj} ->
+            case resolve_ro_siblings(RiakObj, RawBucket, RawKey) of
+                {ok, RiakObj2} ->
+                    riakc_pb_socket:put(Pid, RiakObj2);
+                {error, R} = E ->
+                    io:format("Not updating: ~p", [R]),
+                    E
+            end;
+        {error, Reason} = E ->
+            io:format("Failed to get an object before resolution: ~p", [Reason]),
+            E
+    end.
+
+-spec resolve_ro_siblings(riakc_obj:riakc_obj(), binary(), binary()) ->
+                                 {ok, riakc_obj:riakc_obj()} | {error, term()}.
+resolve_ro_siblings(_, ?USER_BUCKET, _) ->   {error, {not_supported, ?USER_BUCKET}};
+resolve_ro_siblings(_, ?ACCESS_BUCKET, _) ->  {error, {not_supported, ?ACCESS_BUCKET}};
+resolve_ro_siblings(_, ?STORAGE_BUCKET, _) ->  {error, {not_supported, ?STORAGE_BUCKET}};
+resolve_ro_siblings(RO, ?GC_BUCKET, _) ->
+    Resolved = riak_cs_gc:decode_and_merge_siblings(RO, twop_set:new()),
+    Obj = riak_cs_utils:update_obj_value(RO,
+                                         riak_cs_utils:encode_term(Resolved)),
+    {ok, Obj};
+
+resolve_ro_siblings(RO, <<"0b:", _/binary>>, _) ->
+    case riak_cs_utils:resolve_robj_siblings(riakc_obj:get_contents(RO)) of
+        {{MD, Value}, true} when is_binary(Value) ->
+            RO1 = riakc_obj:update_metadata(RO, MD),
+            {ok, riakc_obj:update_value(RO1, Value)};
+        {E, true} ->
+            io:format("Cannot resolve: ~p", [E]),
+            {error, E};
+        {E, false} ->
+            {error, E}
+    end;
+resolve_ro_siblings(RiakObject, <<"0o:", _/binary>>, _RawKey) ->
+    [{_, Manifest}|_] = Manifests =
+        riak_cs_manifest:manifests_from_riak_object(RiakObject),
+    io:format("Value Count: ~p. Length : ~p.~n",
+              [riakc_obj:value_count(RiakObject), length(Manifests)]),
+    ObjectToWrite0 = riak_cs_utils:update_obj_value(
+                       RiakObject, riak_cs_utils:encode_term(Manifests)),
+
+    {B, K} = Manifest?MANIFEST.bkey,
+    RO = riak_cs_manifest_fsm:update_md_with_multipart_2i(ObjectToWrite0, Manifests, B, K),
+    {ok, RO}.
 
 %%%===================================================================
 %%% Internal functions
