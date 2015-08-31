@@ -189,9 +189,10 @@ content_types_accepted(RD, Ctx) ->
     %% e.g., PUT /ObjectName?partNumber=PartNumber&uploadId=UploadId
     riak_cs_mp_utils:make_content_types_accepted(RD, Ctx, accept_body).
 
-parse_body(Body0) ->
+parse_body(Body1) ->
     try
-        Body = re:replace(Body0, "&quot;", "", [global, {return, list}]),
+        Body0 = re:replace(Body1, "&quot;", "", [global, {return, list}]),
+        Body = re:replace(Body0, "&#34;", "", [global, {return, list}]),
         {ok, ParsedData} = riak_cs_xml:scan(Body),
         #xmlElement{name='CompleteMultipartUpload'} = ParsedData,
         Nums = [list_to_integer(T#xmlText.value) ||
