@@ -149,6 +149,8 @@ parse_auth_v4_header(String, UserId, Acc) ->
 
 parse_auth_v4_header_key([$= | Rest], Acc) ->
     {lists:reverse(Acc), Rest};
+parse_auth_v4_header_key([$\s | Rest], Acc) ->
+    parse_auth_v4_header_key(Rest, Acc);
 parse_auth_v4_header_key([C | Rest], Acc) ->
     parse_auth_v4_header_key(Rest, [C | Acc]).
 
